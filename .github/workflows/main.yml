@@ -41,7 +41,7 @@ jobs:
       RUN_TIMEOUT_MIN: ${{ inputs.timeout_min }}
 
       # Pinned runner behavior (not user-configurable ATM)
-      RUN_OPTS: --cxl-test-run --ndctl-build
+      RUN_OPTS: --nfit-test-run --ndctl-build
 
       # Pinned image selection
       MKOSI_DISTRO: ubuntu
@@ -208,7 +208,7 @@ jobs:
         working-directory: ${{ github.workspace }}/kernel
         run: |
           make defconfig ARCH=x86_64
-          bash ./scripts/kconfig/merge_config.sh .config ../run_qemu/.github/workflows/cxl-test.cfg
+          bash ./scripts/kconfig/merge_config.sh .config ../run_qemu/.github/workflows/nfit-test.cfg
           make olddefconfig ARCH=x86_64
 
       - name: disable AppArmor
@@ -286,7 +286,7 @@ jobs:
         run: |
           echo "==== CXL unit test run results ===="
           sed -e 's/^\[[^]]*\] //' -e 's/\r$//' /tmp/rq_0.log \
-            | awk '/^======= meson-test.log ========/{p=1} p; /^======= Done \/usr\/local\/bin\/rq_cxl_tests.sh ========/{p=0}'
+            | awk '/^======= meson-test.log ========/{p=1} p; /^======= Done \/usr\/local\/bin\/rq_nfit_tests.sh ========/{p=0}'
 
       - name: upload logs
         if: ${{ always() }}
