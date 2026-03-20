@@ -209,9 +209,10 @@ jobs:
         run: |
           make defconfig ARCH=x86_64
 
-# ALISON  merge both config
-          bash ./scripts/kconfig/merge_config.sh .config ../run_qemu/.github/workflows/cxl-test.cfg
-          bash ./scripts/kconfig/merge_config.sh .config ../run_qemu/.github/workflows/nfit-test.cfg
+          # ALISON  merge both config
+          bash ./scripts/kconfig/merge_config.sh .config \
+            ../run_qemu/.github/workflows/cxl-test.cfg \
+            ../run_qemu/.github/workflows/nfit-test.cfg
           make olddefconfig ARCH=x86_64
 
       - name: disable AppArmor
