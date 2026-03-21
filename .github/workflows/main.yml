@@ -1,5 +1,5 @@
 ---
-name: CXL test runner
+name: ndctl-test runner
 
 # yamllint disable-line rule:truthy
 on:
@@ -23,6 +23,17 @@ on:
         required: true
         default: "pending"
 
+      test_suite:
+        description: "ndctl test suite"
+        required: true
+        type: choice
+        default: "all"
+        options:
+          - all
+          - nvdimm
+          - dax
+          - cxl
+
       timeout_min:
         description: "Guest timeout (minutes)"
         required: true
@@ -39,9 +50,7 @@ jobs:
       NDCTL_REPO: ${{ inputs.ndctl_repo }}
       NDCTL_BRANCH: ${{ inputs.ndctl_branch }}
       RUN_TIMEOUT_MIN: ${{ inputs.timeout_min }}
-
-      # Pinned runner behavior (not user-configurable ATM)
-      RUN_OPTS: --cxl-test --nfit-test-run --ndctl-build
+      TEST_SUITE: ${{ inputs.test_suite }}
 
       # Pinned image selection
       MKOSI_DISTRO: ubuntu
@@ -186,6 +195,36 @@ jobs:
               "https://github.com/${KERNEL_REPO}.git" kernel
           fi
 
+      - name: plan selected test suite
+        id: suiteplan
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$TEST_SUITE" in
+            all)
+              run_opts='--all-test-run'
+              config_desc='cxl-test.cfg + nfit-test.cfg'
+              ;;
+            nvdimm)
+              run_opts='--nvdimm-test-run'
+              config_desc='nfit-test.cfg'
+              ;;
+            dax)
+              run_opts='--dax-test-run'
+              config_desc='cxl-test.cfg + nfit-test.cfg'
+              ;;
+            cxl)
+              run_opts='--cxl-test-run'
+              config_desc='cxl-test.cfg'
+              ;;
+            *)
+              echo "Unknown test_suite: $TEST_SUITE" >&2
+              exit 1
+              ;;
+          esac
+          printf 'run_opts=%s\n' "$run_opts" >> "$GITHUB_OUTPUT"
+          printf 'config_desc=%s\n' "$config_desc" >> "$GITHUB_OUTPUT"
+
       - name: show revisions under test
         run: |
           echo "Kernel repo:   $KERNEL_REPO"
@@ -201,18 +240,38 @@ jobs:
           echo "Runner:        $RUNNER_OS_LABEL"
           echo "Arch:          $ARCH_LABEL"
           echo "mkosi image:   $MKOSI_DISTRO $MKOSI_RELEASE"
-          echo "run_qemu opts: $RUN_OPTS"
+          echo "test suite:    $TEST_SUITE"
+          echo "kernel config: ${{ steps.suiteplan.outputs.config_desc }}"
+          echo "run_qemu opts: ${{ steps.suiteplan.outputs.run_opts }}"
           echo "timeout (min): $RUN_TIMEOUT_MIN"
 
       - name: defconfig
         working-directory: ${{ github.workspace }}/kernel
+        shell: bash
         run: |
+          set -euo pipefail
           make defconfig ARCH=x86_64
 
-          # ALISON  merge both config
-          bash ./scripts/kconfig/merge_config.sh .config \
-            ../run_qemu/.github/workflows/cxl-test.cfg \
-            ../run_qemu/.github/workflows/nfit-test.cfg
+          case "$TEST_SUITE" in
+            all|dax)
+              cfgs=(
+                ../run_qemu/.github/workflows/cxl-test.cfg
+                ../run_qemu/.github/workflows/nfit-test.cfg
+              )
+              ;;
+            cxl)
+              cfgs=(../run_qemu/.github/workflows/cxl-test.cfg)
+              ;;
+            nvdimm)
+              cfgs=(../run_qemu/.github/workflows/nfit-test.cfg)
+              ;;
+            *)
+              echo "Unknown test_suite: $TEST_SUITE" >&2
+              exit 1
+              ;;
+          esac
+
+          bash ./scripts/kconfig/merge_config.sh .config "${cfgs[@]}"
           make olddefconfig ARCH=x86_64
 
       - name: disable AppArmor
@@ -243,7 +302,7 @@ jobs:
             PATH=/usr/lib/ccache:"$PATH" \
             distro=${MKOSI_DISTRO} rev=${MKOSI_RELEASE} \
             ndctl='${{ github.workspace }}/ndctl' \
-            ../run_qemu/run_qemu.sh ${RUN_OPTS} \
+            ../run_qemu/run_qemu.sh ${{ steps.suiteplan.outputs.run_opts }} \
               --rebuild=kmod \
               --no-kvm \
               --timeout=${RUN_TIMEOUT_MIN} \
@@ -285,18 +344,18 @@ jobs:
           echo "=== bios_debug.log ==="
           tail -n 200 kernel/bios_debug.log 2>/dev/null || tail -n 200 bios_debug.log 2>/dev/null || true
 
-      - name: CXL unit test run results
+      - name: ndctl test run results
         if: always()
         run: |
-          echo "==== CXL unit test run results ===="
+          echo "==== ndctl test run results ($TEST_SUITE) ===="
           sed -e 's/^\[[^]]*\] //' -e 's/\r$//' /tmp/rq_0.log \
-            | awk '/^======= meson-test.log ========/{p=1} p; /^======= Done \/usr\/local\/bin\/rq_nfit_tests.sh ========/{p=0}'
+            | awk '/^======= meson-test.log ========/{p=1} p; /^======= Done .*rq_ndctl_tests.sh ========/{p=0}'
 
       - name: upload logs
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: logs
+          name: logs-${{ inputs.test_suite }}
           if-no-files-found: warn
           path: |
             /tmp/rq_0.log

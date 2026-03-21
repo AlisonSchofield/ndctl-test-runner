@@ -137,6 +137,54 @@ arch_init()
 }
 
 script_dir="$(cd "$(dirname "$(readlink -e "${BASH_SOURCE[0]}")")" && pwd)"
+_rq_test_profile=""
+_rq_test_name=""
+_rq_test_meson_args=""
+
+normalize_test_runner_args()
+{
+	local profile="$_rq_test_profile"
+	normalized_args=()
+
+	while (($#)); do
+		case "$1" in
+			--cxl-test-run)
+				test -z "$profile" || test "$profile" = "cxl" ||
+					fail 'Only one of --all-test-run, --nvdimm-test-run, --dax-test-run, or --cxl-test-run may be specified'
+				profile="cxl"
+				normalized_args+=("--cxl-test")
+				;;
+			--nfit-test-run|--nvdimm-test-run)
+				test -z "$profile" || test "$profile" = "nvdimm" ||
+					fail 'Only one of --all-test-run, --nvdimm-test-run, --dax-test-run, or --cxl-test-run may be specified'
+				profile="nvdimm"
+				normalized_args+=("--nfit-test")
+				;;
+			--dax-test-run)
+				test -z "$profile" || test "$profile" = "dax" ||
+					fail 'Only one of --all-test-run, --nvdimm-test-run, --dax-test-run, or --cxl-test-run may be specified'
+				profile="dax"
+				normalized_args+=("--cxl-test" "--nfit-test")
+				;;
+			--all-test-run)
+				test -z "$profile" || test "$profile" = "all" ||
+					fail 'Only one of --all-test-run, --nvdimm-test-run, --dax-test-run, or --cxl-test-run may be specified'
+				profile="all"
+				normalized_args+=("--cxl-test" "--nfit-test")
+				;;
+			*)
+				normalized_args+=("$1")
+				;;
+		esac
+		shift
+	done
+
+	_rq_test_profile="$profile"
+}
+
+normalize_test_runner_args "$@"
+set -- "${normalized_args[@]}"
+
 parser_generator="${script_dir}/parser_generator.m4"
 parser_lib="${script_dir}/run_qemu_parser.sh"
 if [ ! -e "$parser_lib" ] || [ "$parser_generator" -nt "$parser_lib" ]; then
@@ -155,10 +203,12 @@ if [ ${_arg_working_dir:0:1} == "-" ]; then
 	exit 1
 fi
 
-cxl_test_script="$script_dir/scripts/rq_cxl_tests.sh"
-cxl_results_script="$script_dir/scripts/rq_cxl_results.sh"
-nfit_test_script="$script_dir/scripts/rq_nfit_tests.sh"
-nfit_results_script="$script_dir/scripts/rq_nfit_results.sh"
+ndctl_test_script="$script_dir/scripts/rq_ndctl_tests.sh"
+ndctl_results_script="$script_dir/scripts/rq_ndctl_results.sh"
+cxl_test_script="$ndctl_test_script"
+cxl_results_script="$ndctl_results_script"
+nfit_test_script="$ndctl_test_script"
+nfit_results_script="$ndctl_results_script"
 
 # /etc/os-release is what mkosi "detect_distribution()" uses too.
 get_os()
@@ -447,40 +497,72 @@ process_options_logic()
 
 	arch_init
 
-	if [[ $_arg_cxl_test_run == "on" ]]; then
-		_arg_cxl_debug="on"
-		_arg_cxl_test="on"
+	if [[ -z $_rq_test_profile ]]; then
+		if [[ $_arg_cxl_test_run == "on" ]]; then
+			_rq_test_profile="cxl"
+		elif [[ $_arg_nfit_test_run == "on" ]]; then
+			_rq_test_profile="nvdimm"
+		fi
+	fi
+
+	if [[ -n $_rq_test_profile ]]; then
+		case "$_rq_test_profile" in
+			cxl)
+				_arg_cxl_debug="on"
+				_arg_cxl_test="on"
+				_rq_test_name="CXL"
+				_rq_test_meson_args="--suite=ndctl:cxl"
+				if [[ $_arg_timeout == "0" ]]; then
+					_arg_timeout="15"
+				fi
+				;;
+			nvdimm)
+				_arg_nfit_test="on"
+				set_topology "med"
+				_rq_test_name="NVDIMM"
+				_rq_test_meson_args="--suite=ndctl:ndctl"
+				if [[ $_arg_timeout == "0" ]]; then
+					_arg_timeout="20"
+				fi
+				;;
+			dax)
+				_arg_cxl_test="on"
+				_arg_nfit_test="on"
+				set_topology "med"
+				_rq_test_name="DAX"
+				_rq_test_meson_args="--suite=ndctl:dax"
+				if [[ $_arg_timeout == "0" ]]; then
+					_arg_timeout="20"
+				fi
+				;;
+			all)
+				_arg_cxl_debug="on"
+				_arg_cxl_test="on"
+				_arg_nfit_test="on"
+				set_topology "med"
+				_rq_test_name="ALL"
+				_rq_test_meson_args=""
+				if [[ $_arg_timeout == "0" ]]; then
+					_arg_timeout="20"
+				fi
+				;;
+			*)
+				fail 'Unknown ndctl test profile: %s' "$_rq_test_profile"
+				;;
+		esac
+
 		if [[ ! $_arg_autorun ]]; then
-			_arg_autorun="$cxl_test_script"
+			_arg_autorun="$ndctl_test_script"
 		fi
 		if [[ ! $_arg_post_script ]]; then
-			_arg_post_script="$cxl_results_script"
+			_arg_post_script="$ndctl_results_script"
 		fi
 		if [[ ! $_arg_log ]]; then
 			_arg_log="/tmp/rq_${_arg_instance}.log"
-		fi
-		if [[ $_arg_timeout == "0" ]]; then
-			_arg_timeout="15"
 		fi
 	fi
 	if [[ $_arg_cxl_test == "on" ]]; then
 		check_ndctl_dir
-	fi
-	if [[ $_arg_nfit_test_run == "on" ]]; then
-		_arg_nfit_test="on"
-		set_topology "med"
-		if [[ ! $_arg_autorun ]]; then
-			_arg_autorun="$nfit_test_script"
-		fi
-		if [[ ! $_arg_post_script ]]; then
-			_arg_post_script="$nfit_results_script"
-		fi
-		if [[ ! $_arg_log ]]; then
-			_arg_log="/tmp/rq_${_arg_instance}.log"
-		fi
-		if [[ $_arg_timeout == "0" ]]; then
-			_arg_timeout="20"
-		fi
 	fi
 
 	[[ $_arg_legacy_bios == 'on' ]] || edk2_vmf_configure
@@ -751,6 +833,25 @@ setup_autorun()
 		systemd_preset enable rq-custom.target
 		systemd_preset enable rq_autorun.service
 	fi
+}
+
+setup_ndctl_test_profile()
+{
+	local prefix="$1"
+	local conf_dir="$prefix/etc/default"
+	local conf_file="$conf_dir/rq_ndctl_test.conf"
+
+	if [[ -z $_rq_test_profile ]]; then
+		rm -f "$conf_file"
+		return
+	fi
+
+	mkdir -p "$conf_dir"
+	cat <<- EOF > "$conf_file"
+		NDCTL_TEST_PROFILE='$_rq_test_profile'
+		NDCTL_TEST_NAME='$_rq_test_name'
+		NDCTL_TEST_MESON_ARGS='$_rq_test_meson_args'
+	EOF
 }
 
 
@@ -1153,6 +1254,8 @@ __update_existing_rootfs()
 	sudo -E bash $_trace_sh -c "$(declare -f setup_depmod); _arg_nfit_test=$_arg_nfit_test; _arg_cxl_test=$_arg_cxl_test; kver=$kver; setup_depmod $inst_prefix"
 	#shellcheck disable=SC2086
 	sudo -E bash -e $_trace_sh -c "$(declare -f setup_autorun); _arg_autorun=$_arg_autorun; setup_autorun $inst_prefix"
+	#shellcheck disable=SC2086
+	sudo -E bash -e $_trace_sh -c "$(declare -f setup_ndctl_test_profile); _rq_test_profile=$_rq_test_profile; _rq_test_name=$_rq_test_name; _rq_test_meson_args=$_rq_test_meson_args; setup_ndctl_test_profile $inst_prefix"
 
 	umount_rootfs 2
 }
@@ -1440,6 +1543,7 @@ make_rootfs()
 
 	setup_depmod "mkosi.extra"
 	setup_autorun "mkosi.extra"
+	setup_ndctl_test_profile "mkosi.extra"
 
 	if [[ $_arg_debug == "on" ]]; then
 		if test "$mkosi_ver" -lt 15; then
