@@ -24,15 +24,9 @@ on:
         default: "pending"
 
       test_suite:
-        description: "ndctl test suite"
+        description: "ndctl test suites: all, or space/comma separated subset of nvdimm dax cxl"
         required: true
-        type: choice
         default: "all"
-        options:
-          - all
-          - nvdimm
-          - dax
-          - cxl
 
       timeout_min:
         description: "Guest timeout (minutes)"
@@ -240,7 +234,8 @@ jobs:
           echo "Runner:        $RUNNER_OS_LABEL"
           echo "Arch:          $ARCH_LABEL"
           echo "mkosi image:   $MKOSI_DISTRO $MKOSI_RELEASE"
-          echo "test suite:    $TEST_SUITE"
+          echo "test suites:   $TEST_SUITE"
+          echo "selected:      ${{ steps.suiteplan.outputs.selected }}"
           echo "kernel config: ${{ steps.suiteplan.outputs.config_desc }}"
           echo "run_qemu opts: ${{ steps.suiteplan.outputs.run_opts }}"
           echo "timeout (min): $RUN_TIMEOUT_MIN"
@@ -252,24 +247,43 @@ jobs:
           set -euo pipefail
           make defconfig ARCH=x86_64
 
-          case "$TEST_SUITE" in
-            all|dax)
-              cfgs=(
-                ../run_qemu/.github/workflows/cxl-test.cfg
-                ../run_qemu/.github/workflows/nfit-test.cfg
-              )
-              ;;
-            cxl)
-              cfgs=(../run_qemu/.github/workflows/cxl-test.cfg)
-              ;;
-            nvdimm)
-              cfgs=(../run_qemu/.github/workflows/nfit-test.cfg)
-              ;;
-            *)
-              echo "Unknown test_suite: $TEST_SUITE" >&2
-              exit 1
-              ;;
-          esac
+          raw=$(printf '%s ' "$TEST_SUITE" | tr ',' ' ')
+          read -r -a requested <<<"$raw"
+
+          have_nvdimm=0
+          have_dax=0
+          have_cxl=0
+
+          for item in "${requested[@]}"; do
+            case "$item" in
+              all)
+                have_nvdimm=1
+                have_dax=1
+                have_cxl=1
+                ;;
+              nvdimm)
+                have_nvdimm=1
+                ;;
+              dax)
+                have_dax=1
+                ;;
+              cxl)
+                have_cxl=1
+                ;;
+              *)
+                echo "Unknown test suite token: $item" >&2
+                exit 1
+                ;;
+            esac
+          done
+
+          cfgs=()
+          if (( have_cxl || have_dax )); then
+            cfgs+=(../run_qemu/.github/workflows/cxl-test.cfg)
+          fi
+          if (( have_nvdimm || have_dax )); then
+            cfgs+=(../run_qemu/.github/workflows/nfit-test.cfg)
+          fi
 
           bash ./scripts/kconfig/merge_config.sh .config "${cfgs[@]}"
           make olddefconfig ARCH=x86_64

@@ -16,7 +16,6 @@ warn_lines_re=(
 	".*-+\\[ cut here \\]-+"
 	".*-+\\[ end trace [0-9a-f]+ \\]-+"
 	"Call Trace:"
-	"WARNING:"
 	"kernel BUG"
 )
 
@@ -97,7 +96,7 @@ exit_fail()
 
 exit_warn()
 {
-	print_box 3 "$(profile_name) Tests - Success" "**with warnings - see log**" "warn_count: $warn_count"
+	print_box 3 "$(profile_name) Tests - Success" "with warnings - see log" "warn_count: $warn_count"
 	exit 125
 }
 

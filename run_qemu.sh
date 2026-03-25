@@ -143,33 +143,27 @@ _rq_test_meson_args=""
 
 normalize_test_runner_args()
 {
-	local profile="$_rq_test_profile"
+	local have_nvdimm=0 have_dax=0 have_cxl=0
 	normalized_args=()
 
 	while (($#)); do
 		case "$1" in
 			--cxl-test-run)
-				test -z "$profile" || test "$profile" = "cxl" ||
-					fail 'Only one of --all-test-run, --nvdimm-test-run, --dax-test-run, or --cxl-test-run may be specified'
-				profile="cxl"
+				have_cxl=1
 				normalized_args+=("--cxl-test")
 				;;
 			--nfit-test-run|--nvdimm-test-run)
-				test -z "$profile" || test "$profile" = "nvdimm" ||
-					fail 'Only one of --all-test-run, --nvdimm-test-run, --dax-test-run, or --cxl-test-run may be specified'
-				profile="nvdimm"
+				have_nvdimm=1
 				normalized_args+=("--nfit-test")
 				;;
 			--dax-test-run)
-				test -z "$profile" || test "$profile" = "dax" ||
-					fail 'Only one of --all-test-run, --nvdimm-test-run, --dax-test-run, or --cxl-test-run may be specified'
-				profile="dax"
+				have_dax=1
 				normalized_args+=("--cxl-test" "--nfit-test")
 				;;
 			--all-test-run)
-				test -z "$profile" || test "$profile" = "all" ||
-					fail 'Only one of --all-test-run, --nvdimm-test-run, --dax-test-run, or --cxl-test-run may be specified'
-				profile="all"
+				have_nvdimm=1
+				have_dax=1
+				have_cxl=1
 				normalized_args+=("--cxl-test" "--nfit-test")
 				;;
 			*)
@@ -179,7 +173,17 @@ normalize_test_runner_args()
 		shift
 	done
 
-	_rq_test_profile="$profile"
+	if (( have_nvdimm && have_dax && have_cxl )); then
+		_rq_test_profile="all"
+	elif (( have_nvdimm || have_dax || have_cxl )); then
+		local profile_parts=()
+		(( have_nvdimm )) && profile_parts+=("nvdimm")
+		(( have_dax )) && profile_parts+=("dax")
+		(( have_cxl )) && profile_parts+=("cxl")
+		_rq_test_profile="${profile_parts[*]}"
+	else
+		_rq_test_profile=""
+	fi
 }
 
 normalize_test_runner_args "$@"
@@ -506,50 +510,72 @@ process_options_logic()
 	fi
 
 	if [[ -n $_rq_test_profile ]]; then
-		case "$_rq_test_profile" in
-			cxl)
-				_arg_cxl_debug="on"
-				_arg_cxl_test="on"
-				_rq_test_name="CXL"
-				_rq_test_meson_args="--suite=ndctl:cxl"
-				if [[ $_arg_timeout == "0" ]]; then
-					_arg_timeout="15"
-				fi
-				;;
-			nvdimm)
-				_arg_nfit_test="on"
-				set_topology "med"
-				_rq_test_name="NVDIMM"
-				_rq_test_meson_args="--suite=ndctl:ndctl"
-				if [[ $_arg_timeout == "0" ]]; then
-					_arg_timeout="20"
-				fi
-				;;
-			dax)
-				_arg_cxl_test="on"
-				_arg_nfit_test="on"
-				set_topology "med"
-				_rq_test_name="DAX"
-				_rq_test_meson_args="--suite=ndctl:dax"
-				if [[ $_arg_timeout == "0" ]]; then
-					_arg_timeout="20"
-				fi
-				;;
-			all)
-				_arg_cxl_debug="on"
-				_arg_cxl_test="on"
-				_arg_nfit_test="on"
-				set_topology "med"
-				_rq_test_name="ALL"
-				_rq_test_meson_args=""
-				if [[ $_arg_timeout == "0" ]]; then
-					_arg_timeout="20"
-				fi
-				;;
-			*)
-				fail 'Unknown ndctl test profile: %s' "$_rq_test_profile"
-				;;
-		esac
+		local have_nvdimm=0 have_dax=0 have_cxl=0 profile_token
+
+		# ndctl test-run profiles use mock devices from the test modules.
+		# Do not enable QEMU CXL devices or machine cxl=on for these runs.
+		_arg_cxl="off"
+
+		for profile_token in $_rq_test_profile; do
+			case "$profile_token" in
+				all)
+					have_nvdimm=1
+					have_dax=1
+					have_cxl=1
+					;;
+				nvdimm)
+					have_nvdimm=1
+					;;
+				dax)
+					have_dax=1
+					;;
+				cxl)
+					have_cxl=1
+					;;
+				*)
+					fail 'Unknown ndctl test profile token: %s' "$profile_token"
+					;;
+			esac
+		done
+
+		_rq_test_name=""
+		_rq_test_meson_args=""
+
+		if (( have_cxl )); then
+			_arg_cxl_debug="on"
+			_arg_cxl_test="on"
+			_rq_test_name+=" CXL"
+			_rq_test_meson_args+=" --suite=ndctl:cxl"
+		fi
+		if (( have_nvdimm )); then
+			_arg_nfit_test="on"
+			set_topology "med"
+			_rq_test_name+=" NVDIMM"
+			_rq_test_meson_args+=" --suite=ndctl:ndctl"
+		fi
+		if (( have_dax )); then
+			_arg_cxl_test="on"
+			_arg_nfit_test="on"
+			set_topology "med"
+			_rq_test_name+=" DAX"
+			_rq_test_meson_args+=" --suite=ndctl:dax"
+		fi
+
+		_rq_test_name=${_rq_test_name# }
+		_rq_test_meson_args=${_rq_test_meson_args# }
+
+		if (( have_nvdimm && have_dax && have_cxl )); then
+			_rq_test_name="ALL"
+			_rq_test_meson_args=""
+		fi
+
+		if [[ $_arg_timeout == "0" ]]; then
+			if (( have_cxl && ! have_nvdimm && ! have_dax )); then
+				_arg_timeout="15"
+			else
+				_arg_timeout="20"
+			fi
+		fi
 
 		if [[ ! $_arg_autorun ]]; then
 			_arg_autorun="$ndctl_test_script"

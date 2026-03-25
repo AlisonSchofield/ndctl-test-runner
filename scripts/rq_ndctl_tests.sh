@@ -54,7 +54,8 @@ fi
 logfile="ndctl-${NDCTL_TEST_PROFILE}-test-$(date +%Y-%m-%d--%H%M%S).log"
 meson_cmd=(meson test -C build)
 if [[ -n "$NDCTL_TEST_MESON_ARGS" ]]; then
-	meson_cmd+=("$NDCTL_TEST_MESON_ARGS")
+	read -r -a meson_extra_args <<<"$NDCTL_TEST_MESON_ARGS"
+	meson_cmd+=("${meson_extra_args[@]}")
 fi
 
 set +e
