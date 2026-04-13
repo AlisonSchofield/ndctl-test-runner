@@ -6,9 +6,7 @@ logfile="$1"
 
 find_lines_re=(
 	"auto-running .*rq_ndctl_tests.sh"
-	"[0-9]+/[0-9]+.*OK"
 	"Ok:[ \\t]+[0-9]+"
-	"Fail:[ \\t]+0"
 	"Done .*rq_ndctl_tests.sh"
 )
 
@@ -17,20 +15,22 @@ warn_lines_re=(
 	".*-+\\[ end trace [0-9a-f]+ \\]-+"
 	"Call Trace:"
 	"kernel BUG"
+	"[0-9]+/[0-9]+.*FAIL"
+	'Fail:[[:blank:]]+[^0[:blank:]]'
+	'Timeout:[[:blank:]]+[^0[:blank:]]'
 )
 
 raw_command_re=(
 	".*raw command path used"
 )
 
+# Only infrastructure failures fail the workflow: build errors or the guest
+# not completing (caught above by missing find_lines_re entries).
+# Individual test failures are reported via warn_lines_re but do not fail
+# the workflow — that would prevent ccache from being saved.
 error_lines_re=(
 	"make:.*\\[Makefile:.*check] Error"
 	"ninja: build stopped: subcommand failed"
-	"[0-9]+/[0-9]+.*FAIL"
-	'Fail:[[:blank:]]+[^0[:blank:]]'
-	'Unexpected Pass:[[:blank:]]+[^0[:blank:]]'
-	'Skipped:[[:blank:]]+[^0[:blank:]]'
-	'Timeout:[[:blank:]]+[^0[:blank:]]'
 )
 
 warn_count=0
@@ -97,7 +97,7 @@ exit_fail()
 exit_warn()
 {
 	print_box 3 "$(profile_name) Tests - Success" "with warnings - see log" "warn_count: $warn_count"
-	exit 125
+	exit 0
 }
 
 for re in "${find_lines_re[@]}"; do

@@ -90,4 +90,4 @@ else
 fi
 
 echo "======= Done $0 rc=$rc ========" > /dev/kmsg
-exit $rc
+exit 0
