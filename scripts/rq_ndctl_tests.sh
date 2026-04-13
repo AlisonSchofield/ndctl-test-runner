@@ -41,13 +41,10 @@ cd "$NDCTL" || {
 	exit 1
 }
 
-rm -rf build
-meson setup build 2>/dev/kmsg
-meson configure -Dtest=enabled -Ddestructive=enabled -Ddocs=disabled build 2>/dev/kmsg
-meson compile -C build 2>/dev/kmsg
-meson install -C build 2>/dev/kmsg
-
-echo "======= ${0##*/} ndctl build done ========" > /dev/kmsg
+if [[ ! -d build ]]; then
+	printf '<0>FATAL: %s: no pre-built ndctl build dir at %s/build\n' "$0" "$NDCTL" > /dev/kmsg
+	exit 1
+fi
 
 if [[ "$NDCTL_TEST_PROFILE" == "nvdimm" || "$NDCTL_TEST_PROFILE" == "dax" || "$NDCTL_TEST_PROFILE" == "all" ]]; then
 	modprobe -r nfit_test || true
@@ -82,10 +79,12 @@ rc=$?
 echo "======= meson test end rc=$rc ========" > /dev/kmsg
 set -e
 
+echo "======= meson-test.log ========" > /dev/kmsg
+[[ -f "$logfile" ]] && dumpfile "$logfile"
+
 if [[ $rc -ne 0 ]]; then
 	echo "======= test failure logs ========" > /dev/kmsg
 	[[ -f "$NDCTL"/build/meson-logs/testlog.txt ]] && dumpfile "$NDCTL"/build/meson-logs/testlog.txt
-	[[ -f "$logfile" ]] && dumpfile "$logfile"
 else
 	rm -f "$logfile"
 fi
