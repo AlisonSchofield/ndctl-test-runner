@@ -1,10 +1,11 @@
-# CXL Test Runner
+# NDCTL Test Runner
 
-CXL Test Runner is a GitHub Actions workflow that allows Linux kernel
-developers to validate CXL changes using the ndctl CXL test suite.
+NDCTL Test Runner is a GitHub Actions workflow that allows Linux kernel
+developers to validate kernel changes using the ndctl test suites for
+CXL, NVDIMM, and DAX.
 
-The workflow builds a kernel, boots it in QEMU using run_qemu.sh, and
-executes the CXL unit tests from ndctl.
+The workflow builds a kernel, boots it in QEMU using run_qemu_ci.sh, and
+executes the selected ndctl test suites.
 
 The goal is to provide a simple automated testing environment that runs
 entirely on GitHub-hosted infrastructure. No special hardware is required.
@@ -16,7 +17,7 @@ entirely on GitHub-hosted infrastructure. No special hardware is required.
 
 2. Open the **Actions** tab in your fork.
 
-3. Select **CXL test runner**.
+3. Select **ndctl-test runner**.
 
 4. Click **Run workflow**.
 
@@ -39,6 +40,7 @@ kernel_repo: https://git.kernel.org/pub/scm/linux/kernel/git/cxl/cxl.git
 kernel_branch: fixes
 ndctl_repo: pmem/ndctl
 ndctl_branch: pending
+test_suite: cxl
 timeout_min: 35
 ```
 
@@ -46,25 +48,50 @@ This runs the ndctl CXL test suite against the current CXL maintainer
 fixes branch in QEMU.
 
 
+## Workflow Inputs
+
+| Input | Description | Default |
+|-------|-------------|---------|
+| `kernel_repo` | Kernel repo: `owner/name` or full git URL | `AlisonSchofield/linux-kernel` |
+| `kernel_branch` | Kernel branch, tag, or SHA | `cxl-testme` |
+| `ndctl_repo` | ndctl repo: `owner/name` or full git URL | `pmem/ndctl` |
+| `ndctl_branch` | ndctl branch, tag, or SHA | `pending` |
+| `test_suite` | Test suites to run (see below) | `all` |
+| `timeout_min` | Guest timeout in minutes | `35` |
+
+### test_suite values
+
+| Value | Test suites run |
+|-------|----------------|
+| `all` | CXL, NVDIMM, and DAX tests |
+| `cxl` | CXL unit tests only |
+| `nvdimm` | NVDIMM (nfit) tests only |
+| `dax` | DAX tests only |
+
+Space- or comma-separated combinations are also accepted (for example `nvdimm dax`).
+
+
 ## Example Inputs
 
-Example using a GitHub kernel repository:
+Example using a GitHub kernel repository (CXL testing):
 
 ```
 kernel_repo: yourname/linux
 kernel_branch: cxl-feature-branch
 ndctl_repo: pmem/ndctl
 ndctl_branch: pending
+test_suite: cxl
 timeout_min: 35
 ```
 
-Example using a kernel.org maintainer tree:
+Example using a kernel.org maintainer tree (all suites):
 
 ```
 kernel_repo: https://git.kernel.org/pub/scm/linux/kernel/git/cxl/cxl.git
 kernel_branch: next
 ndctl_repo: pmem/ndctl
 ndctl_branch: pending
+test_suite: all
 timeout_min: 35
 ```
 
@@ -82,19 +109,21 @@ gh auth login
 Run the workflow:
 
 ```
-gh workflow run "CXL test runner" \
-  --repo yourname/cxl-test-runner \
+gh workflow run "ndctl-test runner" \
+  --repo yourname/ndctl-test-runner \
   -f kernel_repo=yourname/linux \
-  -f kernel_branch=cxl-feature-branch
+  -f kernel_branch=cxl-feature-branch \
+  -f test_suite=cxl
 ```
 
 Example using the CXL maintainer tree:
 
 ```
-gh workflow run "CXL test runner" \
-  --repo yourname/cxl-test-runner \
+gh workflow run "ndctl-test runner" \
+  --repo yourname/ndctl-test-runner \
   -f kernel_repo=https://git.kernel.org/pub/scm/linux/kernel/git/cxl/cxl.git \
-  -f kernel_branch=fixes
+  -f kernel_branch=fixes \
+  -f test_suite=cxl
 ```
 
 Watch the run:
@@ -106,9 +135,9 @@ gh run watch
 
 ## Example Test Output
 
-The workflow summary displays the results of each CXL test.
+The workflow summary displays the results of each test.
 
-Example:
+Example CXL output:
 
 ```
 1/13 ndctl:cxl / cxl-topology.sh        OK
@@ -130,18 +159,18 @@ Detailed logs are also uploaded as workflow artifacts.
 ## Automatically Trigger Tests From Your Kernel Repository
 
 Developers may configure their kernel repository to automatically trigger
-the CXL test runner whenever commits are pushed.
+the NDCTL Test Runner whenever commits are pushed.
 
 Create the file:
 
 ```
-.github/workflows/cxl-test.yml
+.github/workflows/ndctl-test.yml
 ```
 
 Example workflow:
 
 ```
-name: run CXL tests
+name: run ndctl tests
 
 on:
   push:
@@ -153,30 +182,31 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Trigger CXL test runner
+      - name: Trigger NDCTL Test Runner
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
         run: |
-          gh workflow run "CXL test runner" \
-            --repo yourname/cxl-test-runner \
+          gh workflow run "ndctl-test runner" \
+            --repo yourname/ndctl-test-runner \
             -f kernel_repo=${{ github.repository }} \
-            -f kernel_branch=${{ github.ref_name }}
+            -f kernel_branch=${{ github.ref_name }} \
+            -f test_suite=cxl
 ```
 
 
 ## Overview
 
-This project builds on the run_qemu.sh testing environment and packages
-it into a reproducible GitHub Actions workflow.
+This project packages the run_qemu_ci.sh testing environment into a
+reproducible GitHub Actions workflow for automated ndctl test execution.
 
 The runner performs the following steps:
 
 1. Checkout the requested kernel repository and branch
 2. Checkout the requested ndctl repository and branch
-3. Build the kernel
-4. Boot the kernel using run_qemu.sh
-5. Execute the CXL unit tests
+3. Build the kernel with configuration appropriate for the selected test suite
+4. Boot the kernel in QEMU using run_qemu_ci.sh
+5. Execute the selected ndctl test suites (CXL, NVDIMM, DAX, or all)
 6. Publish logs and test summaries
 
 
@@ -191,20 +221,15 @@ mkosi image:   ubuntu noble
 ```
 
 
-## Relationship to run_qemu.sh
+## Relationship to run_qemu
 
 https://github.com/pmem/run_qemu
 
-This project builds on the run_qemu.sh infrastructure originally
-developed by Vishal Verma and expanded upon by Marc Herbert.
+This project builds on the run_qemu infrastructure originally developed
+by Vishal Verma and expanded upon by Marc Herbert.
 
-run_qemu.sh provides a flexible environment for running CXL and NVDIMM
-tests in QEMU.
-
-While cxl-test-runner focuses on automated GitHub testing, developers
-who want full control over the environment can run run_qemu.sh locally to:
-
-- debug failures interactively
-- experiment with different CXL topologies
-- develop new tests
-- explore advanced QEMU configurations
+`run_qemu_ci.sh` is a CI-focused derivative of the upstream `run_qemu.sh`.
+It retains the kernel build, rootfs image creation, and automated QEMU
+boot and test execution, while removing all interactive features (SSH
+access, networking setup, GDB integration, and developer convenience
+tools) that are not needed for automated CI runs.
