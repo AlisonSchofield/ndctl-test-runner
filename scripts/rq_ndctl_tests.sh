@@ -51,7 +51,7 @@ if [[ "$NDCTL_TEST_PROFILE" == "nvdimm" || "$NDCTL_TEST_PROFILE" == "dax" || "$N
 fi
 
 logfile="ndctl-${NDCTL_TEST_PROFILE}-test-$(date +%Y-%m-%d--%H%M%S).log"
-meson_cmd=(meson test -C build)
+meson_cmd=(meson test -C build --no-rebuild)
 if [[ -n "$NDCTL_TEST_MESON_ARGS" ]]; then
 	read -r -a meson_extra_args <<<"$NDCTL_TEST_MESON_ARGS"
 	meson_cmd+=("${meson_extra_args[@]}")
