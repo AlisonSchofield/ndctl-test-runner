@@ -43,7 +43,7 @@ cd "$NDCTL" || {
 
 rm -rf build
 meson setup build 2>/dev/kmsg
-meson configure -Dtest=enabled -Ddestructive=enabled -Dasciidoctor=enabled build 2>/dev/kmsg
+meson configure -Dtest=enabled -Ddestructive=enabled -Ddocs=disabled build 2>/dev/kmsg
 meson compile -C build 2>/dev/kmsg
 meson install -C build 2>/dev/kmsg
 
