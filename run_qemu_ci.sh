@@ -1442,7 +1442,11 @@ make_rootfs()
 		process_mkosi_template "$tmpl" > "$dst"
 	done
 
-	rsync -a "${script_dir}"/mkosi/extra/  mkosi.extra/
+	mkdir -p mkosi.extra/root mkosi.extra/etc
+
+	if [ -d "${script_dir}/mkosi/extra" ]; then
+		rsync -a "${script_dir}/mkosi/extra/" mkosi.extra/
+	fi
 
 	chmod -R go-rwx mkosi.extra/root
 
