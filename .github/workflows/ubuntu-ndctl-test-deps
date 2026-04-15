@@ -1,0 +1,11 @@
+# Test script dependencies for ndctl unit tests on Ubuntu 24.04
+# dax-ext4.sh, dax-xfs.sh
+trace-cmd
+# btt-errors.sh, pfn-meta-errors.sh
+bsdextrautils
+# btt-pad-compat.sh
+xxd
+# rescan-partition.sh
+parted
+# device-dax-fio.sh
+fio

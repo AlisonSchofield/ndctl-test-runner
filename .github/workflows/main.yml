@@ -133,6 +133,11 @@ jobs:
           grep -vE '^[[:blank:]]*#' .github/workflows/ubuntu-ndctl-build-deps | \
           xargs sudo apt install -y
 
+      - name: apt install ndctl test dependencies
+        run: |
+          grep -vE '^[[:blank:]]*#' .github/workflows/ubuntu-ndctl-test-deps | \
+          xargs sudo apt install -y
+
       - name: argbash
         run: |
           AB_VER=2.10.0
