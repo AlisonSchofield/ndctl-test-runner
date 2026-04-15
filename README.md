@@ -226,6 +226,11 @@ and the full `rq_0.log` is uploaded as an artifact for detailed analysis.
 Developers may configure their kernel repository to automatically trigger
 the NDCTL Test Runner whenever commits are pushed.
 
+This works with **your fork** of ndctl-test-runner. You cannot trigger
+runs in `pmem/ndctl-test-runner` directly. If you have a public branch
+you would like added to the nightly runs in `pmem/ndctl-test-runner`
+(temporarily or long-term), open an issue in this repository and ask.
+
 Create the file `.github/workflows/ndctl-test.yml` in your kernel repo:
 
 ```yaml
@@ -267,8 +272,10 @@ The runner performs the following steps:
 6. Publish a test summary and upload logs when failures or skips occur
 
 A unified kernel configuration (ci-base.cfg + cxl-test.cfg + nfit-test.cfg)
-is used for all suites so that all scheduled workflows share the same kernel
-binary and benefit from a warm ccache across runs.
+is always applied regardless of which test suite is selected. This maximizes
+ccache hits: switching suites reuses the same binary, and iterating on kernel
+patches only recompiles changed files rather than triggering config-driven
+rebuilds across the tree.
 
 
 ## Test Environment
